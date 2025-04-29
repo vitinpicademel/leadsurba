@@ -217,9 +217,14 @@
     <script>
         // Configuração do Socket.IO com reconexão automática
         const socket = io({
+            path: '/socket.io',
+            transports: ['websocket', 'polling'],
             reconnection: true,
-            reconnectionAttempts: 10,
-            reconnectionDelay: 1000
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            timeout: 20000,
+            autoConnect: true
         });
 
         const notificationSound = document.getElementById('notificationSound');
@@ -248,6 +253,21 @@
         socket.on('error', (error) => {
             console.error('Erro no Socket.IO:', error);
             toastr.error('Erro na conexão com servidor', 'Erro');
+        });
+
+        // Adicionar logs para debug
+        socket.on('connect_error', (error) => {
+            console.error('Erro de conexão:', error);
+            toastr.error('Erro na conexão com servidor: ' + error.message);
+        });
+
+        socket.on('connect_timeout', () => {
+            console.error('Timeout na conexão');
+            toastr.warning('Timeout na conexão com servidor');
+        });
+
+        socket.on('reconnect_attempt', () => {
+            console.log('Tentando reconectar...');
         });
 
         // Configuração do Toastr

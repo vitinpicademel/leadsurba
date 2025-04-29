@@ -5,14 +5,30 @@ const path = require('path');
 const nodemailer = require('nodemailer');
 const http = require('http');
 const socketIO = require('socket.io');
+const cors = require('cors');
 
 const app = express();
+
+// Configurar CORS
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' 
+    ? ['https://leadsurba.vercel.app', 'https://www.leadsurba.vercel.app'] 
+    : 'http://localhost:3000',
+  methods: ['GET', 'POST'],
+  credentials: true
+}));
+
 const server = http.createServer(app);
 const io = socketIO(server, {
   cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
+    origin: process.env.NODE_ENV === 'production' 
+      ? ['https://leadsurba.vercel.app', 'https://www.leadsurba.vercel.app'] 
+      : 'http://localhost:3000',
+    methods: ["GET", "POST"],
+    credentials: true
+  },
+  transports: ['websocket', 'polling'],
+  path: '/socket.io'
 });
 
 // Middleware para processar JSON
@@ -22,9 +38,14 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Conectar ao MongoDB
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('Conectado ao MongoDB'))
-  .catch((error) => console.error('Erro ao conectar ao MongoDB:', error));
+mongoose.connect(process.env.MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 5000,
+  socketTimeoutMS: 45000,
+})
+.then(() => console.log('Conectado ao MongoDB'))
+.catch((error) => console.error('Erro ao conectar ao MongoDB:', error));
 
 // Configuração do Nodemailer
 const transporter = nodemailer.createTransport({
@@ -49,6 +70,14 @@ transporter.verify(function(error, success) {
 // Socket.IO - Conexão
 io.on('connection', (socket) => {
   console.log('Novo cliente conectado:', socket.id);
+  
+  socket.on('error', (error) => {
+    console.error('Erro no Socket:', error);
+  });
+
+  socket.on('connect_error', (error) => {
+    console.error('Erro de conexão:', error);
+  });
   
   // Enviar dados existentes quando um cliente se conecta
   socket.on('requestInitialData', async () => {
