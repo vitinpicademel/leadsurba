@@ -2,7 +2,6 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const path = require('path');
-const nodemailer = require('nodemailer');
 const http = require('http');
 const socketIO = require('socket.io');
 const cors = require('cors');
@@ -28,6 +27,9 @@ const io = socketIO(server, {
   transports: ['websocket', 'polling']
 });
 
+// Variável global para armazenar a conexão
+let mongoConnection = null;
+
 // Conectar ao MongoDB
 const connectDB = async () => {
   try {
@@ -35,15 +37,46 @@ const connectDB = async () => {
       throw new Error('String de conexão do MongoDB não encontrada nas variáveis de ambiente');
     }
 
-    await mongoose.connect(process.env.MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true
-    });
-    
-    console.log('Conectado ao MongoDB Atlas com sucesso!');
+    if (mongoConnection === null) {
+      await mongoose.connect(process.env.MONGODB_URI, {
+        useNewUrlParser: true,
+        useUnifiedTopology: true,
+        serverSelectionTimeoutMS: 30000,
+        socketTimeoutMS: 45000,
+        connectTimeoutMS: 30000,
+        keepAlive: true
+      });
+      
+      mongoConnection = mongoose.connection;
+      console.log('Conectado ao MongoDB Atlas com sucesso!');
+      
+      mongoConnection.on('error', (err) => {
+        console.error('Erro na conexão MongoDB:', err);
+        mongoConnection = null;
+      });
+      
+      mongoConnection.on('disconnected', () => {
+        console.log('MongoDB desconectado');
+        mongoConnection = null;
+      });
+    }
+
+    return mongoConnection;
   } catch (error) {
     console.error('Erro ao conectar ao MongoDB:', error);
+    mongoConnection = null;
     throw error;
+  }
+};
+
+// Middleware para garantir conexão com MongoDB
+const ensureDbConnected = async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (error) {
+    console.error('Erro ao conectar com o banco de dados:', error);
+    res.status(500).json({ error: 'Erro de conexão com o banco de dados' });
   }
 };
 
@@ -53,11 +86,12 @@ app.get('/api/test', (req, res) => {
 });
 
 // Rota para obter todos os dados
-app.get('/api/dados', async (req, res) => {
+app.get('/api/dados', ensureDbConnected, async (req, res) => {
   try {
-    await connectDB();
+    console.log('Buscando dados do MongoDB...');
     const collection = mongoose.connection.db.collection('leads');
     const dados = await collection.find({}).toArray();
+    console.log(`Encontrados ${dados.length} registros`);
     res.json(dados);
   } catch (error) {
     console.error('Erro ao buscar dados:', error);
@@ -69,9 +103,8 @@ app.get('/api/dados', async (req, res) => {
 });
 
 // Rota para receber novos leads
-app.post('/api/leads', async (req, res) => {
+app.post('/api/leads', ensureDbConnected, async (req, res) => {
   try {
-    await connectDB();
     const collection = mongoose.connection.db.collection('leads');
     const novoLead = {
       ...req.body,
@@ -103,6 +136,7 @@ io.on('connection', (socket) => {
       await connectDB();
       const collection = mongoose.connection.db.collection('leads');
       const dados = await collection.find({}).toArray();
+      console.log(`Enviando ${dados.length} registros para o cliente ${socket.id}`);
       socket.emit('initialData', dados);
     } catch (error) {
       console.error('Erro ao enviar dados iniciais:', error);
@@ -123,11 +157,16 @@ app.get('*', (req, res) => {
 // Iniciar o servidor
 const PORT = process.env.PORT || 3000;
 
-if (process.env.NODE_ENV !== 'production') {
-  server.listen(PORT, () => {
-    console.log(`Servidor rodando na porta ${PORT}`);
-  });
-}
+// Conectar ao MongoDB antes de iniciar o servidor
+connectDB().then(() => {
+  if (process.env.NODE_ENV !== 'production') {
+    server.listen(PORT, () => {
+      console.log(`Servidor rodando na porta ${PORT}`);
+    });
+  }
+}).catch(err => {
+  console.error('Falha ao iniciar o servidor:', err);
+});
 
 // Exportar para Vercel
 module.exports = server; 

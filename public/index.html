@@ -263,8 +263,7 @@
             isConnected = true;
             reconnectAttempts = 0;
             toastr.success('Conectado ao servidor de notificações', 'Conexão estabelecida');
-            // Solicitar dados iniciais
-            socket.emit('requestInitialData');
+            carregarDados(); // Carregar dados ao conectar
         });
 
         socket.on('disconnect', (reason) => {
@@ -401,18 +400,22 @@
                         'Content-Type': 'application/json'
                     },
                     mode: 'cors',
-                    credentials: 'include',
                     cache: 'no-store'
                 });
 
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
                 }
 
                 const dados = await response.json();
                 console.log('Dados carregados com sucesso:', dados);
 
-                if (!dados || dados.length === 0) {
+                if (!dados || !Array.isArray(dados)) {
+                    throw new Error('Formato de dados inválido recebido do servidor');
+                }
+
+                if (dados.length === 0) {
                     console.log('Nenhum dado encontrado');
                     document.getElementById('tableBody').innerHTML = '<tr><td colspan="5" class="text-center">Nenhum lead cadastrado ainda</td></tr>';
                     return;
@@ -426,9 +429,11 @@
                 
                 if (reconnectAttempts < 5) {
                     const delay = Math.min(5000 * (reconnectAttempts + 1), 30000);
+                    reconnectAttempts++;
                     toastr.info(`Tentando novamente em ${delay/1000} segundos...`, 'Reconectando');
+                    
                     setTimeout(() => {
-                        console.log('Tentando recarregar dados...');
+                        console.log(`Tentativa ${reconnectAttempts} de recarregar dados...`);
                         carregarDados();
                     }, delay);
                 } else {
@@ -462,7 +467,11 @@
             `).join('');
         }
 
-        document.addEventListener('DOMContentLoaded', carregarDados);
+        // Inicializar a página
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('Página carregada, iniciando conexão...');
+            carregarDados();
+        });
     </script>
 </body>
 </html> 
