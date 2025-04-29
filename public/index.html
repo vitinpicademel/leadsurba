@@ -224,8 +224,31 @@
             reconnectionDelay: 1000,
             reconnectionDelayMax: 5000,
             timeout: 20000,
-            autoConnect: true
+            autoConnect: true,
+            forceNew: true,
+            withCredentials: true
         });
+
+        let isConnected = false;
+        let reconnectAttempts = 0;
+
+        function handleConnectionError() {
+            console.log('Tentando reconectar...');
+            if (!isConnected) {
+                toastr.warning('Tentando reconectar ao servidor...', 'Conexão perdida');
+                setTimeout(() => {
+                    if (!isConnected) {
+                        reconnectAttempts++;
+                        if (reconnectAttempts <= 3) {
+                            console.log('Tentativa de reconexão:', reconnectAttempts);
+                            socket.connect();
+                        } else {
+                            toastr.error('Não foi possível estabelecer conexão. Recarregue a página.', 'Erro de conexão');
+                        }
+                    }
+                }, 5000);
+            }
+        }
 
         const notificationSound = document.getElementById('notificationSound');
         const notification = document.getElementById('notification');
@@ -235,39 +258,29 @@
         // Eventos do Socket.IO
         socket.on('connect', () => {
             console.log('Conectado ao servidor Socket.IO');
+            isConnected = true;
+            reconnectAttempts = 0;
             toastr.success('Conectado ao servidor de notificações', 'Conexão estabelecida');
             // Solicitar dados iniciais
             socket.emit('requestInitialData');
         });
 
-        socket.on('disconnect', () => {
-            console.log('Desconectado do servidor Socket.IO');
+        socket.on('disconnect', (reason) => {
+            console.log('Desconectado do servidor Socket.IO. Razão:', reason);
+            isConnected = false;
             toastr.warning('Conexão com servidor perdida. Tentando reconectar...', 'Desconectado');
+            handleConnectionError();
         });
 
-        socket.on('reconnect', (attemptNumber) => {
-            console.log('Reconectado ao servidor após ' + attemptNumber + ' tentativas');
-            toastr.success('Reconectado ao servidor', 'Conexão reestabelecida');
+        socket.on('connect_error', (error) => {
+            console.error('Erro de conexão:', error);
+            isConnected = false;
+            handleConnectionError();
         });
 
         socket.on('error', (error) => {
             console.error('Erro no Socket.IO:', error);
-            toastr.error('Erro na conexão com servidor', 'Erro');
-        });
-
-        // Adicionar logs para debug
-        socket.on('connect_error', (error) => {
-            console.error('Erro de conexão:', error);
-            toastr.error('Erro na conexão com servidor: ' + error.message);
-        });
-
-        socket.on('connect_timeout', () => {
-            console.error('Timeout na conexão');
-            toastr.warning('Timeout na conexão com servidor');
-        });
-
-        socket.on('reconnect_attempt', () => {
-            console.log('Tentando reconectar...');
+            toastr.error('Erro na conexão: ' + (error.message || 'Erro desconhecido'), 'Erro');
         });
 
         // Configuração do Toastr

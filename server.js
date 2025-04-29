@@ -28,7 +28,12 @@ const io = socketIO(server, {
     credentials: true
   },
   transports: ['websocket', 'polling'],
-  path: '/socket.io'
+  path: '/socket.io',
+  allowEIO3: true,
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  upgradeTimeout: 30000,
+  maxHttpBufferSize: 1e8
 });
 
 // Middleware para processar JSON
@@ -67,9 +72,17 @@ transporter.verify(function(error, success) {
   }
 });
 
+// Adicionar middleware de logging para Socket.IO
+io.use((socket, next) => {
+  console.log('Nova tentativa de conexão Socket.IO:', socket.id);
+  console.log('Handshake:', socket.handshake);
+  next();
+});
+
 // Socket.IO - Conexão
 io.on('connection', (socket) => {
   console.log('Novo cliente conectado:', socket.id);
+  console.log('Transport usado:', socket.conn.transport.name);
   
   socket.on('error', (error) => {
     console.error('Erro no Socket:', error);
@@ -82,17 +95,20 @@ io.on('connection', (socket) => {
   // Enviar dados existentes quando um cliente se conecta
   socket.on('requestInitialData', async () => {
     try {
+      console.log('Solicitação de dados iniciais recebida de:', socket.id);
       const db = mongoose.connection.db;
       const collection = db.collection('leads');
       const dados = await collection.find({}).toArray();
+      console.log('Enviando dados iniciais para:', socket.id);
       socket.emit('initialData', dados);
     } catch (error) {
       console.error('Erro ao enviar dados iniciais:', error);
+      socket.emit('error', { message: 'Erro ao carregar dados iniciais' });
     }
   });
 
-  socket.on('disconnect', () => {
-    console.log('Cliente desconectado:', socket.id);
+  socket.on('disconnect', (reason) => {
+    console.log('Cliente desconectado:', socket.id, 'Razão:', reason);
   });
 });
 
