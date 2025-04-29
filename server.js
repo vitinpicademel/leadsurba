@@ -14,7 +14,111 @@ app.use(cors());
 // Middleware para processar JSON
 app.use(express.json());
 
-// Configurar middleware para servir arquivos estáticos
+// Criar router específico para API
+const apiRouter = express.Router();
+
+// Rota básica de teste
+apiRouter.get('/test', (req, res) => {
+  res.json({ status: 'API funcionando!' });
+});
+
+// Rota para obter todos os dados
+apiRouter.get('/dados', ensureDbConnected, async (req, res) => {
+  try {
+    console.log('Buscando dados do MongoDB...');
+    const collection = mongoose.connection.db.collection('leads');
+    const dados = await collection.find({}).toArray();
+    console.log(`Encontrados ${dados.length} registros`);
+    res.json(dados);
+  } catch (error) {
+    console.error('Erro ao buscar dados:', error);
+    res.status(500).json({ 
+      error: 'Erro ao buscar dados',
+      details: error.message 
+    });
+  }
+});
+
+// Rota para receber novos leads
+apiRouter.post('/leads', ensureDbConnected, async (req, res) => {
+  try {
+    const collection = mongoose.connection.db.collection('leads');
+    const novoLead = {
+      ...req.body,
+      dataEnvio: new Date()
+    };
+    
+    const resultado = await collection.insertOne(novoLead);
+    const leadCompleto = await collection.findOne({ _id: resultado.insertedId });
+    
+    // Notificar via Socket.IO
+    io.emit('novoLead', leadCompleto);
+    
+    res.status(201).json({ 
+      message: 'Lead registrado com sucesso!',
+      lead: leadCompleto
+    });
+  } catch (error) {
+    console.error('Erro ao registrar lead:', error);
+    res.status(500).json({ error: 'Erro ao registrar lead' });
+  }
+});
+
+// Rota de teste para conexão MongoDB
+apiRouter.get('/test-db', async (req, res) => {
+  try {
+    console.log('Testando conexão com MongoDB...');
+    
+    if (!process.env.MONGODB_URI) {
+      throw new Error('MONGODB_URI não está configurada');
+    }
+
+    console.log('URI do MongoDB configurada:', process.env.MONGODB_URI.replace(/\/\/[^:]+:[^@]+@/, '//<credentials>@'));
+    
+    const connection = await mongoose.connect(process.env.MONGODB_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 5000
+    });
+
+    const dbName = connection.connection.db.databaseName;
+    const collections = await connection.connection.db.listCollections().toArray();
+    const connectionState = mongoose.connection.readyState;
+    const stateMap = {
+      0: 'desconectado',
+      1: 'conectado',
+      2: 'conectando',
+      3: 'desconectando'
+    };
+
+    res.json({
+      status: 'success',
+      message: 'Conexão com MongoDB estabelecida com sucesso',
+      database: dbName,
+      collections: collections.map(c => c.name),
+      connectionState: `${connectionState} (${stateMap[connectionState]})`,
+      version: mongoose.version
+    });
+
+  } catch (error) {
+    console.error('Erro no teste de conexão:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Erro ao conectar com MongoDB',
+      error: {
+        message: error.message,
+        code: error.code,
+        name: error.name
+      },
+      mongodbUri: process.env.MONGODB_URI ? 'Configurada' : 'Não configurada'
+    });
+  }
+});
+
+// Montar o router da API antes dos middlewares estáticos
+app.use('/api', apiRouter);
+
+// Configurar middleware para servir arquivos estáticos DEPOIS das rotas da API
 app.use(express.static(path.join(__dirname, 'public')));
 
 const server = http.createServer(app);
@@ -89,104 +193,6 @@ const ensureDbConnected = async (req, res, next) => {
     res.status(500).json({ error: 'Erro de conexão com o banco de dados' });
   }
 };
-
-// Rota básica de teste
-app.get('/api/test', (req, res) => {
-  res.json({ status: 'API funcionando!' });
-});
-
-// Rota para obter todos os dados
-app.get('/api/dados', ensureDbConnected, async (req, res) => {
-  try {
-    console.log('Buscando dados do MongoDB...');
-    const collection = mongoose.connection.db.collection('leads');
-    const dados = await collection.find({}).toArray();
-    console.log(`Encontrados ${dados.length} registros`);
-    res.json(dados);
-  } catch (error) {
-    console.error('Erro ao buscar dados:', error);
-    res.status(500).json({ 
-      error: 'Erro ao buscar dados',
-      details: error.message 
-    });
-  }
-});
-
-// Rota para receber novos leads
-app.post('/api/leads', ensureDbConnected, async (req, res) => {
-  try {
-    const collection = mongoose.connection.db.collection('leads');
-    const novoLead = {
-      ...req.body,
-      dataEnvio: new Date()
-    };
-    
-    const resultado = await collection.insertOne(novoLead);
-    const leadCompleto = await collection.findOne({ _id: resultado.insertedId });
-    
-    // Notificar via Socket.IO
-    io.emit('novoLead', leadCompleto);
-    
-    res.status(201).json({ 
-      message: 'Lead registrado com sucesso!',
-      lead: leadCompleto
-    });
-  } catch (error) {
-    console.error('Erro ao registrar lead:', error);
-    res.status(500).json({ error: 'Erro ao registrar lead' });
-  }
-});
-
-// Rota de teste para conexão MongoDB
-app.get('/api/test-db', async (req, res) => {
-  try {
-    console.log('Testando conexão com MongoDB...');
-    
-    if (!process.env.MONGODB_URI) {
-      throw new Error('MONGODB_URI não está configurada');
-    }
-
-    console.log('URI do MongoDB configurada:', process.env.MONGODB_URI.replace(/\/\/[^:]+:[^@]+@/, '//<credentials>@'));
-    
-    const connection = await mongoose.connect(process.env.MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-      serverSelectionTimeoutMS: 5000
-    });
-
-    const dbName = connection.connection.db.databaseName;
-    const collections = await connection.connection.db.listCollections().toArray();
-    const connectionState = mongoose.connection.readyState;
-    const stateMap = {
-      0: 'desconectado',
-      1: 'conectado',
-      2: 'conectando',
-      3: 'desconectando'
-    };
-
-    res.json({
-      status: 'success',
-      message: 'Conexão com MongoDB estabelecida com sucesso',
-      database: dbName,
-      collections: collections.map(c => c.name),
-      connectionState: `${connectionState} (${stateMap[connectionState]})`,
-      version: mongoose.version
-    });
-
-  } catch (error) {
-    console.error('Erro no teste de conexão:', error);
-    res.status(500).json({
-      status: 'error',
-      message: 'Erro ao conectar com MongoDB',
-      error: {
-        message: error.message,
-        code: error.code,
-        name: error.name
-      },
-      mongodbUri: process.env.MONGODB_URI ? 'Configurada' : 'Não configurada'
-    });
-  }
-});
 
 // Socket.IO - Conexão
 io.on('connection', (socket) => {
