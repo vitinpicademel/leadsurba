@@ -248,6 +248,8 @@
                         if (reconnectAttempts <= 3) {
                             console.log('Tentativa de reconexão:', reconnectAttempts);
                             socket.connect();
+                            // Tentar recarregar os dados também
+                            carregarDados();
                         } else {
                             toastr.error('Não foi possível estabelecer conexão. Recarregue a página.', 'Erro de conexão');
                         }
@@ -397,22 +399,43 @@
 
         async function carregarDados() {
             try {
-                const response = await fetch(`${baseUrl}/api/dados`);
+                console.log('Iniciando carregamento de dados...');
+                const response = await fetch(`${baseUrl}/api/dados`, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    },
+                    mode: 'cors',
+                    cache: 'no-cache',
+                    credentials: 'same-origin'
+                });
+
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    const errorData = await response.json();
+                    throw new Error(`HTTP error! status: ${response.status}, message: ${errorData.error || 'Erro desconhecido'}`);
                 }
+
                 const dados = await response.json();
-                console.log('Dados carregados:', dados);
-                dados.reverse();
-                if (dados.length > 0) {
-                    renderizarDados(dados);
-                } else {
+                console.log('Dados carregados com sucesso:', dados);
+
+                if (!dados || dados.length === 0) {
                     console.log('Nenhum dado encontrado');
-                    toastr.info('Nenhum dado encontrado', 'Informação');
+                    toastr.info('Nenhum lead cadastrado ainda', 'Informação');
+                    return;
                 }
+
+                renderizarDados(dados.reverse());
+                toastr.success('Dados carregados com sucesso!', 'Sucesso');
             } catch (error) {
-                console.error('Erro ao carregar dados:', error);
-                toastr.error('Erro ao carregar os dados: ' + error.message, 'Erro');
+                console.error('Erro detalhado ao carregar dados:', error);
+                toastr.error(`Erro ao carregar os dados: ${error.message}`, 'Erro');
+                
+                // Tentar recarregar após 5 segundos em caso de erro
+                setTimeout(() => {
+                    console.log('Tentando recarregar dados...');
+                    carregarDados();
+                }, 5000);
             }
         }
 

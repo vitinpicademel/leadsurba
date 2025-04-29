@@ -53,11 +53,43 @@ app.use(express.static(path.join(__dirname, 'public')));
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-  serverSelectionTimeoutMS: 5000,
+  serverSelectionTimeoutMS: 30000,
   socketTimeoutMS: 45000,
+  keepAlive: true,
+  keepAliveInitialDelay: 300000,
+  retryWrites: true,
+  w: "majority"
 })
-.then(() => console.log('Conectado ao MongoDB'))
-.catch((error) => console.error('Erro ao conectar ao MongoDB:', error));
+.then(() => {
+  console.log('Conectado ao MongoDB');
+  // Verificar a conexão periodicamente
+  setInterval(() => {
+    if (mongoose.connection.readyState !== 1) {
+      console.log('Reconectando ao MongoDB...');
+      mongoose.connect(process.env.MONGODB_URI);
+    }
+  }, 10000);
+})
+.catch((error) => {
+  console.error('Erro ao conectar ao MongoDB:', error);
+  // Tentar reconectar em caso de erro
+  setTimeout(() => {
+    console.log('Tentando reconectar ao MongoDB...');
+    mongoose.connect(process.env.MONGODB_URI);
+  }, 5000);
+});
+
+// Adicionar handler para erros de conexão
+mongoose.connection.on('error', (err) => {
+  console.error('Erro na conexão MongoDB:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+  console.log('MongoDB desconectado. Tentando reconectar...');
+  setTimeout(() => {
+    mongoose.connect(process.env.MONGODB_URI);
+  }, 5000);
+});
 
 // Configuração do Nodemailer
 const transporter = nodemailer.createTransport({
@@ -187,16 +219,41 @@ app.get('/', (req, res) => {
 app.get('/api/dados', async (req, res) => {
   try {
     console.log('Recebida requisição para /api/dados');
+    
+    // Verificar estado da conexão
+    if (mongoose.connection.readyState !== 1) {
+      console.log('MongoDB não está conectado. Tentando reconectar...');
+      await mongoose.connect(process.env.MONGODB_URI);
+    }
+    
     const db = mongoose.connection.db;
     console.log('Banco de dados conectado:', db.databaseName);
     const collection = db.collection('leads');
     console.log('Buscando documentos na coleção leads...');
+    
     const dados = await collection.find({}).toArray();
     console.log('Documentos encontrados:', dados.length);
+    
+    if (!dados) {
+      return res.status(404).json({ 
+        error: 'Nenhum dado encontrado',
+        connectionState: mongoose.connection.readyState 
+      });
+    }
+    
     res.json(dados);
   } catch (error) {
-    console.error('Erro ao buscar dados:', error);
-    res.status(500).json({ error: 'Erro ao buscar dados', detalhes: error.message });
+    console.error('Erro detalhado ao buscar dados:', {
+      error: error.message,
+      stack: error.stack,
+      connectionState: mongoose.connection.readyState
+    });
+    
+    res.status(500).json({ 
+      error: 'Erro ao buscar dados', 
+      details: error.message,
+      connectionState: mongoose.connection.readyState
+    });
   }
 });
 
