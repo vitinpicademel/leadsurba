@@ -1,20 +1,30 @@
-import clientPromise from '../../lib/mongodb';
+import { connectToDatabase } from '../../lib/mongodb';
 
 export default async function handler(req, res) {
   try {
-    const client = await clientPromise;
-    const db = client.db("LandingEstilo");
-    const collection = db.collection("leads");
+    console.log('Iniciando conexão com o banco de dados...');
+    const { db } = await connectToDatabase();
+    console.log('Conexão estabelecida com sucesso');
     
-    // Busca todos os documentos da coleção
-    const dados = await collection.find({}).toArray();
-    
-    // Retorna os dados como JSON
-    res.status(200).json(dados);
+    // Buscar documentos da coleção (com tratamento de erro)
+    try {
+      const collection = db.collection('leads');
+      const leads = await collection.find({}).toArray();
+      console.log(`Encontrados ${leads.length} leads no banco de dados`);
+      
+      // Retornar dados como JSON
+      res.status(200).json(leads);
+    } catch (collectionError) {
+      console.error('Erro ao acessar coleção:', collectionError);
+      res.status(500).json({
+        error: 'Erro ao acessar a coleção',
+        details: collectionError.message
+      });
+    }
   } catch (error) {
-    console.error('Erro ao buscar dados:', error);
-    res.status(500).json({ 
-      error: 'Erro ao buscar dados do banco',
+    console.error('Erro na conexão:', error);
+    res.status(500).json({
+      error: 'Erro de conexão com o banco de dados',
       details: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
