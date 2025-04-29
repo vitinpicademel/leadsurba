@@ -21,7 +21,8 @@ const io = socketIO(server, {
   cors: {
     origin: '*',
     methods: ["GET", "POST"],
-    credentials: true
+    credentials: true,
+    allowedHeaders: ["my-custom-header", "content-type"]
   },
   transports: ['websocket', 'polling'],
   path: '/socket.io',
@@ -30,11 +31,12 @@ const io = socketIO(server, {
   pingInterval: 25000,
   upgradeTimeout: 30000,
   maxHttpBufferSize: 1e8,
+  connectTimeout: 45000,
   handlePreflightRequest: (req, res) => {
     res.writeHead(200, {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET,POST",
-      "Access-Control-Allow-Headers": "my-custom-header",
+      "Access-Control-Allow-Headers": "my-custom-header,content-type",
       "Access-Control-Allow-Credentials": true
     });
     res.end();
@@ -77,17 +79,36 @@ transporter.verify(function(error, success) {
   }
 });
 
+// Middleware para logging detalhado do Socket.IO
+io.engine.on("connection_error", (err) => {
+  console.log("Erro de conexão no engine:", err);
+});
+
+io.engine.on("headers", (headers, req) => {
+  console.log("Headers do engine:", headers);
+});
+
 // Adicionar middleware de logging para Socket.IO
 io.use((socket, next) => {
-  console.log('Nova tentativa de conexão Socket.IO:', socket.id);
-  console.log('Handshake:', socket.handshake);
+  console.log('Nova tentativa de conexão Socket.IO:', {
+    id: socket.id,
+    handshake: {
+      headers: socket.handshake.headers,
+      query: socket.handshake.query,
+      auth: socket.handshake.auth
+    },
+    transport: socket.conn?.transport?.name
+  });
   next();
 });
 
 // Socket.IO - Conexão
 io.on('connection', (socket) => {
-  console.log('Novo cliente conectado:', socket.id);
-  console.log('Transport usado:', socket.conn.transport.name);
+  console.log('Novo cliente conectado:', {
+    id: socket.id,
+    transport: socket.conn.transport.name,
+    remoteAddress: socket.handshake.address
+  });
   
   socket.on('error', (error) => {
     console.error('Erro no Socket:', error);
@@ -104,16 +125,23 @@ io.on('connection', (socket) => {
       const db = mongoose.connection.db;
       const collection = db.collection('leads');
       const dados = await collection.find({}).toArray();
-      console.log('Enviando dados iniciais para:', socket.id);
+      console.log('Enviando dados iniciais para:', socket.id, 'Total de registros:', dados.length);
       socket.emit('initialData', dados);
     } catch (error) {
       console.error('Erro ao enviar dados iniciais:', error);
-      socket.emit('error', { message: 'Erro ao carregar dados iniciais' });
+      socket.emit('error', { 
+        message: 'Erro ao carregar dados iniciais',
+        details: error.message 
+      });
     }
   });
 
   socket.on('disconnect', (reason) => {
-    console.log('Cliente desconectado:', socket.id, 'Razão:', reason);
+    console.log('Cliente desconectado:', {
+      id: socket.id,
+      reason: reason,
+      wasConnected: socket.connected
+    });
   });
 });
 
