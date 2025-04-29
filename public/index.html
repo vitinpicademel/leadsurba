@@ -401,12 +401,12 @@
                         'Content-Type': 'application/json'
                     },
                     mode: 'cors',
-                    credentials: 'include'
+                    credentials: 'include',
+                    cache: 'no-store'
                 });
 
                 if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(`HTTP error! status: ${response.status}, message: ${errorData.error || 'Erro desconhecido'}`);
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
 
                 const dados = await response.json();
@@ -424,11 +424,16 @@
                 console.error('Erro detalhado ao carregar dados:', error);
                 toastr.error(`Erro ao carregar os dados: ${error.message}`, 'Erro');
                 
-                // Tentar recarregar após um tempo progressivo
-                setTimeout(() => {
-                    console.log('Tentando recarregar dados...');
-                    carregarDados();
-                }, Math.min(5000 * reconnectAttempts, 30000));
+                if (reconnectAttempts < 5) {
+                    const delay = Math.min(5000 * (reconnectAttempts + 1), 30000);
+                    toastr.info(`Tentando novamente em ${delay/1000} segundos...`, 'Reconectando');
+                    setTimeout(() => {
+                        console.log('Tentando recarregar dados...');
+                        carregarDados();
+                    }, delay);
+                } else {
+                    toastr.error('Número máximo de tentativas atingido. Por favor, recarregue a página.', 'Erro');
+                }
             }
         }
 

@@ -11,16 +11,17 @@ const app = express();
 
 // Configurar CORS
 app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST'],
-  credentials: true
+  origin: ['https://leadsurba.vercel.app', 'https://www.leadsurba.vercel.app'],
+  methods: ['GET', 'POST', 'OPTIONS'],
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'my-custom-header']
 }));
 
 const server = http.createServer(app);
 const io = socketIO(server, {
   cors: {
-    origin: '*',
-    methods: ["GET", "POST"],
+    origin: ['https://leadsurba.vercel.app', 'https://www.leadsurba.vercel.app'],
+    methods: ["GET", "POST", "OPTIONS"],
     credentials: true,
     allowedHeaders: ["my-custom-header", "content-type"]
   },
@@ -31,16 +32,7 @@ const io = socketIO(server, {
   pingInterval: 25000,
   upgradeTimeout: 30000,
   maxHttpBufferSize: 1e8,
-  connectTimeout: 45000,
-  handlePreflightRequest: (req, res) => {
-    res.writeHead(200, {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET,POST",
-      "Access-Control-Allow-Headers": "my-custom-header,content-type",
-      "Access-Control-Allow-Credentials": true
-    });
-    res.end();
-  }
+  connectTimeout: 45000
 });
 
 // Middleware para processar JSON
@@ -50,49 +42,63 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Conectar ao MongoDB
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-  serverSelectionTimeoutMS: 60000,
-  socketTimeoutMS: 60000,
-  keepAlive: true,
-  keepAliveInitialDelay: 300000,
-  retryWrites: true,
-  w: "majority",
-  maxPoolSize: 10,
-  minPoolSize: 5,
-  maxIdleTimeMS: 60000,
-  connectTimeoutMS: 60000
-})
-.then(() => {
-  console.log('Conectado ao MongoDB');
-  // Verificar a conexão periodicamente
-  setInterval(() => {
-    if (mongoose.connection.readyState !== 1) {
-      console.log('Reconectando ao MongoDB...');
-      mongoose.connect(process.env.MONGODB_URI);
-    }
-  }, 30000);
-})
-.catch((error) => {
-  console.error('Erro ao conectar ao MongoDB:', error);
-  // Tentar reconectar em caso de erro
-  setTimeout(() => {
-    console.log('Tentando reconectar ao MongoDB...');
-    mongoose.connect(process.env.MONGODB_URI);
-  }, 5000);
-});
+const connectDB = async () => {
+  try {
+    const mongoOptions = {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 60000,
+      socketTimeoutMS: 60000,
+      keepAlive: true,
+      keepAliveInitialDelay: 300000,
+      retryWrites: true,
+      w: "majority",
+      maxPoolSize: 10,
+      minPoolSize: 5,
+      maxIdleTimeMS: 60000,
+      connectTimeoutMS: 60000
+    };
+
+    await mongoose.connect(process.env.MONGODB_URI, mongoOptions);
+    console.log('Conectado ao MongoDB Atlas com sucesso!');
+    
+    // Verificar a conexão periodicamente
+    setInterval(async () => {
+      if (mongoose.connection.readyState !== 1) {
+        console.log('Reconectando ao MongoDB...');
+        try {
+          await mongoose.connect(process.env.MONGODB_URI, mongoOptions);
+          console.log('Reconexão bem-sucedida!');
+        } catch (error) {
+          console.error('Erro na reconexão:', error);
+        }
+      }
+    }, 30000);
+
+  } catch (error) {
+    console.error('Erro ao conectar ao MongoDB:', error);
+    // Tentar reconectar em caso de erro
+    setTimeout(connectDB, 5000);
+  }
+};
+
+// Iniciar conexão com MongoDB
+connectDB();
 
 // Adicionar handler para erros de conexão
-mongoose.connection.on('error', (err) => {
+mongoose.connection.on('error', async (err) => {
   console.error('Erro na conexão MongoDB:', err);
+  try {
+    await mongoose.disconnect();
+    await connectDB();
+  } catch (error) {
+    console.error('Erro ao tentar reconectar:', error);
+  }
 });
 
 mongoose.connection.on('disconnected', () => {
   console.log('MongoDB desconectado. Tentando reconectar...');
-  setTimeout(() => {
-    mongoose.connect(process.env.MONGODB_URI);
-  }, 5000);
+  connectDB();
 });
 
 // Configuração do Nodemailer
