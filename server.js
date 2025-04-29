@@ -33,8 +33,7 @@ const connectDB = async () => {
         useUnifiedTopology: true,
         serverSelectionTimeoutMS: 30000,
         socketTimeoutMS: 45000,
-        connectTimeoutMS: 30000,
-        keepAlive: true
+        connectTimeoutMS: 30000
       });
       
       mongoConnection = mongoose.connection;
@@ -226,11 +225,9 @@ const PORT = process.env.PORT || 3000;
 
 // Conectar ao MongoDB antes de iniciar o servidor
 connectDB().then(() => {
-  if (process.env.NODE_ENV !== 'production') {
-    server.listen(PORT, () => {
-      console.log(`Servidor rodando na porta ${PORT}`);
-    });
-  }
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Servidor rodando em http://localhost:${PORT}`);
+  });
 }).catch(err => {
   console.error('Falha ao iniciar o servidor:', err);
 });
