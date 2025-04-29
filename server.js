@@ -53,12 +53,16 @@ app.use(express.static(path.join(__dirname, 'public')));
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-  serverSelectionTimeoutMS: 30000,
-  socketTimeoutMS: 45000,
+  serverSelectionTimeoutMS: 60000,
+  socketTimeoutMS: 60000,
   keepAlive: true,
   keepAliveInitialDelay: 300000,
   retryWrites: true,
-  w: "majority"
+  w: "majority",
+  maxPoolSize: 10,
+  minPoolSize: 5,
+  maxIdleTimeMS: 60000,
+  connectTimeoutMS: 60000
 })
 .then(() => {
   console.log('Conectado ao MongoDB');
@@ -68,7 +72,7 @@ mongoose.connect(process.env.MONGODB_URI, {
       console.log('Reconectando ao MongoDB...');
       mongoose.connect(process.env.MONGODB_URI);
     }
-  }, 10000);
+  }, 30000);
 })
 .catch((error) => {
   console.error('Erro ao conectar ao MongoDB:', error);
@@ -234,11 +238,8 @@ app.get('/api/dados', async (req, res) => {
     const dados = await collection.find({}).toArray();
     console.log('Documentos encontrados:', dados.length);
     
-    if (!dados) {
-      return res.status(404).json({ 
-        error: 'Nenhum dado encontrado',
-        connectionState: mongoose.connection.readyState 
-      });
+    if (!dados || dados.length === 0) {
+      return res.status(200).json([]);
     }
     
     res.json(dados);
@@ -248,6 +249,19 @@ app.get('/api/dados', async (req, res) => {
       stack: error.stack,
       connectionState: mongoose.connection.readyState
     });
+    
+    // Tentar reconectar ao MongoDB em caso de erro
+    if (mongoose.connection.readyState !== 1) {
+      try {
+        await mongoose.connect(process.env.MONGODB_URI);
+        const db = mongoose.connection.db;
+        const collection = db.collection('leads');
+        const dados = await collection.find({}).toArray();
+        return res.json(dados);
+      } catch (reconnectError) {
+        console.error('Erro na tentativa de reconexão:', reconnectError);
+      }
+    }
     
     res.status(500).json({ 
       error: 'Erro ao buscar dados', 

@@ -220,10 +220,10 @@
             path: '/socket.io',
             transports: ['websocket', 'polling'],
             reconnection: true,
-            reconnectionAttempts: 5,
+            reconnectionAttempts: Infinity,
             reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000,
-            timeout: 20000,
+            reconnectionDelayMax: 10000,
+            timeout: 60000,
             autoConnect: true,
             forceNew: true,
             withCredentials: true,
@@ -234,9 +234,7 @@
 
         let isConnected = false;
         let reconnectAttempts = 0;
-        let baseUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:3000' 
-            : 'https://leadsurba.vercel.app';
+        let baseUrl = window.location.origin;
 
         function handleConnectionError() {
             console.log('Tentando reconectar...');
@@ -245,16 +243,12 @@
                 setTimeout(() => {
                     if (!isConnected) {
                         reconnectAttempts++;
-                        if (reconnectAttempts <= 3) {
-                            console.log('Tentativa de reconexão:', reconnectAttempts);
-                            socket.connect();
-                            // Tentar recarregar os dados também
-                            carregarDados();
-                        } else {
-                            toastr.error('Não foi possível estabelecer conexão. Recarregue a página.', 'Erro de conexão');
-                        }
+                        console.log('Tentativa de reconexão:', reconnectAttempts);
+                        socket.connect();
+                        // Tentar recarregar os dados
+                        carregarDados();
                     }
-                }, 5000);
+                }, Math.min(5000 * reconnectAttempts, 30000));
             }
         }
 
@@ -407,8 +401,7 @@
                         'Content-Type': 'application/json'
                     },
                     mode: 'cors',
-                    cache: 'no-cache',
-                    credentials: 'same-origin'
+                    credentials: 'include'
                 });
 
                 if (!response.ok) {
@@ -421,7 +414,7 @@
 
                 if (!dados || dados.length === 0) {
                     console.log('Nenhum dado encontrado');
-                    toastr.info('Nenhum lead cadastrado ainda', 'Informação');
+                    document.getElementById('tableBody').innerHTML = '<tr><td colspan="5" class="text-center">Nenhum lead cadastrado ainda</td></tr>';
                     return;
                 }
 
@@ -431,11 +424,11 @@
                 console.error('Erro detalhado ao carregar dados:', error);
                 toastr.error(`Erro ao carregar os dados: ${error.message}`, 'Erro');
                 
-                // Tentar recarregar após 5 segundos em caso de erro
+                // Tentar recarregar após um tempo progressivo
                 setTimeout(() => {
                     console.log('Tentando recarregar dados...');
                     carregarDados();
-                }, 5000);
+                }, Math.min(5000 * reconnectAttempts, 30000));
             }
         }
 
