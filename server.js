@@ -137,33 +137,6 @@ app.post('/api/leads', ensureDbConnected, async (req, res) => {
   }
 });
 
-// Socket.IO - Conexão
-io.on('connection', (socket) => {
-  console.log('Novo cliente conectado:', socket.id);
-  
-  socket.on('requestInitialData', async () => {
-    try {
-      await connectDB();
-      const collection = mongoose.connection.db.collection('leads');
-      const dados = await collection.find({}).toArray();
-      console.log(`Enviando ${dados.length} registros para o cliente ${socket.id}`);
-      socket.emit('initialData', dados);
-    } catch (error) {
-      console.error('Erro ao enviar dados iniciais:', error);
-      socket.emit('error', { message: 'Erro ao carregar dados iniciais' });
-    }
-  });
-
-  socket.on('disconnect', () => {
-    console.log('Cliente desconectado:', socket.id);
-  });
-});
-
-// Rota para servir o frontend
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
 // Rota de teste para conexão MongoDB
 app.get('/api/test-db', async (req, res) => {
   try {
@@ -213,6 +186,33 @@ app.get('/api/test-db', async (req, res) => {
       mongodbUri: process.env.MONGODB_URI ? 'Configurada' : 'Não configurada'
     });
   }
+});
+
+// Socket.IO - Conexão
+io.on('connection', (socket) => {
+  console.log('Novo cliente conectado:', socket.id);
+  
+  socket.on('requestInitialData', async () => {
+    try {
+      await connectDB();
+      const collection = mongoose.connection.db.collection('leads');
+      const dados = await collection.find({}).toArray();
+      console.log(`Enviando ${dados.length} registros para o cliente ${socket.id}`);
+      socket.emit('initialData', dados);
+    } catch (error) {
+      console.error('Erro ao enviar dados iniciais:', error);
+      socket.emit('error', { message: 'Erro ao carregar dados iniciais' });
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Cliente desconectado:', socket.id);
+  });
+});
+
+// Rota para servir o frontend (deve ser a última rota)
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Iniciar o servidor
