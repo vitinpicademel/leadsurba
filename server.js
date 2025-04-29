@@ -164,6 +164,57 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Rota de teste para conexão MongoDB
+app.get('/api/test-db', async (req, res) => {
+  try {
+    console.log('Testando conexão com MongoDB...');
+    
+    if (!process.env.MONGODB_URI) {
+      throw new Error('MONGODB_URI não está configurada');
+    }
+
+    console.log('URI do MongoDB configurada:', process.env.MONGODB_URI.replace(/\/\/[^:]+:[^@]+@/, '//<credentials>@'));
+    
+    const connection = await mongoose.connect(process.env.MONGODB_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 5000
+    });
+
+    const dbName = connection.connection.db.databaseName;
+    const collections = await connection.connection.db.listCollections().toArray();
+    const connectionState = mongoose.connection.readyState;
+    const stateMap = {
+      0: 'desconectado',
+      1: 'conectado',
+      2: 'conectando',
+      3: 'desconectando'
+    };
+
+    res.json({
+      status: 'success',
+      message: 'Conexão com MongoDB estabelecida com sucesso',
+      database: dbName,
+      collections: collections.map(c => c.name),
+      connectionState: `${connectionState} (${stateMap[connectionState]})`,
+      version: mongoose.version
+    });
+
+  } catch (error) {
+    console.error('Erro no teste de conexão:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Erro ao conectar com MongoDB',
+      error: {
+        message: error.message,
+        code: error.code,
+        name: error.name
+      },
+      mongodbUri: process.env.MONGODB_URI ? 'Configurada' : 'Não configurada'
+    });
+  }
+});
+
 // Iniciar o servidor
 const PORT = process.env.PORT || 3000;
 
