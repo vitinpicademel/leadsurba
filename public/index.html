@@ -220,17 +220,23 @@
             path: '/socket.io',
             transports: ['websocket', 'polling'],
             reconnection: true,
-            reconnectionAttempts: Infinity,
+            reconnectionAttempts: 5,
             reconnectionDelay: 1000,
             reconnectionDelayMax: 5000,
             timeout: 20000,
             autoConnect: true,
             forceNew: true,
-            withCredentials: true
+            withCredentials: true,
+            extraHeaders: {
+                "my-custom-header": "abcd"
+            }
         });
 
         let isConnected = false;
         let reconnectAttempts = 0;
+        let baseUrl = window.location.hostname === 'localhost' 
+            ? 'http://localhost:3000' 
+            : 'https://leadsurba.vercel.app';
 
         function handleConnectionError() {
             console.log('Tentando reconectar...');
@@ -391,32 +397,48 @@
 
         async function carregarDados() {
             try {
-                const response = await fetch('/api/dados');
+                const response = await fetch(`${baseUrl}/api/dados`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
                 const dados = await response.json();
+                console.log('Dados carregados:', dados);
                 dados.reverse();
                 if (dados.length > 0) {
-                    const headers = Object.keys(dados[0]).filter(h => h !== '_id' && h !== 'tipoLote' && h !== 'aceitoPrivacidade' && h !== '__v');
-                    const headerRow = document.getElementById('tableHeader');
-                    headerRow.innerHTML = headers.map(header => 
-                        `<th class="${header === 'dataEnvio' ? 'data-header' : ''}">${nomesCampos[header] || header}</th>`
-                    ).join('');
-
-                    const tableBody = document.getElementById('tableBody');
-                    tableBody.innerHTML = dados.map(item => `
-                        <tr>
-                            ${headers.map(header => {
-                                if(header === 'dataEnvio') {
-                                    return `<td class="data-cell">${formatarData(item[header])}</td>`;
-                                }
-                                return `<td>${item[header]}</td>`;
-                            }).join('')}
-                        </tr>
-                    `).join('');
+                    renderizarDados(dados);
+                } else {
+                    console.log('Nenhum dado encontrado');
+                    toastr.info('Nenhum dado encontrado', 'Informação');
                 }
             } catch (error) {
                 console.error('Erro ao carregar dados:', error);
-                toastr.error('Erro ao carregar os dados', 'Erro');
+                toastr.error('Erro ao carregar os dados: ' + error.message, 'Erro');
             }
+        }
+
+        function renderizarDados(dados) {
+            if (!dados || dados.length === 0) {
+                console.log('Sem dados para renderizar');
+                return;
+            }
+
+            const headers = Object.keys(dados[0]).filter(h => h !== '_id' && h !== 'tipoLote' && h !== 'aceitoPrivacidade' && h !== '__v');
+            const headerRow = document.getElementById('tableHeader');
+            headerRow.innerHTML = headers.map(header => 
+                `<th class="${header === 'dataEnvio' ? 'data-header' : ''}">${nomesCampos[header] || header}</th>`
+            ).join('');
+
+            const tableBody = document.getElementById('tableBody');
+            tableBody.innerHTML = dados.map(item => `
+                <tr>
+                    ${headers.map(header => {
+                        if(header === 'dataEnvio') {
+                            return `<td class="data-cell">${formatarData(item[header])}</td>`;
+                        }
+                        return `<td>${item[header]}</td>`;
+                    }).join('')}
+                </tr>
+            `).join('');
         }
 
         document.addEventListener('DOMContentLoaded', carregarDados);

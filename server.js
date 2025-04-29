@@ -11,9 +11,7 @@ const app = express();
 
 // Configurar CORS
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://leadsurba.vercel.app', 'https://www.leadsurba.vercel.app'] 
-    : 'http://localhost:3000',
+  origin: '*',
   methods: ['GET', 'POST'],
   credentials: true
 }));
@@ -21,9 +19,7 @@ app.use(cors({
 const server = http.createServer(app);
 const io = socketIO(server, {
   cors: {
-    origin: process.env.NODE_ENV === 'production' 
-      ? ['https://leadsurba.vercel.app', 'https://www.leadsurba.vercel.app'] 
-      : 'http://localhost:3000',
+    origin: '*',
     methods: ["GET", "POST"],
     credentials: true
   },
@@ -33,7 +29,16 @@ const io = socketIO(server, {
   pingTimeout: 60000,
   pingInterval: 25000,
   upgradeTimeout: 30000,
-  maxHttpBufferSize: 1e8
+  maxHttpBufferSize: 1e8,
+  handlePreflightRequest: (req, res) => {
+    res.writeHead(200, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET,POST",
+      "Access-Control-Allow-Headers": "my-custom-header",
+      "Access-Control-Allow-Credentials": true
+    });
+    res.end();
+  }
 });
 
 // Middleware para processar JSON
