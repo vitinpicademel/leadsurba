@@ -37,6 +37,9 @@ const connectDB = async () => {
       throw new Error('String de conexão do MongoDB não encontrada nas variáveis de ambiente');
     }
 
+    console.log('Tentando conectar ao MongoDB...');
+    console.log('String de conexão:', process.env.MONGODB_URI.replace(/\/\/[^:]+:[^@]+@/, '//<credentials>@')); // Log seguro da string de conexão
+
     if (mongoConnection === null) {
       await mongoose.connect(process.env.MONGODB_URI, {
         useNewUrlParser: true,
@@ -49,6 +52,8 @@ const connectDB = async () => {
       
       mongoConnection = mongoose.connection;
       console.log('Conectado ao MongoDB Atlas com sucesso!');
+      console.log('Nome do banco de dados:', mongoose.connection.db.databaseName);
+      console.log('Estado da conexão:', mongoose.connection.readyState);
       
       mongoConnection.on('error', (err) => {
         console.error('Erro na conexão MongoDB:', err);
@@ -63,7 +68,12 @@ const connectDB = async () => {
 
     return mongoConnection;
   } catch (error) {
-    console.error('Erro ao conectar ao MongoDB:', error);
+    console.error('Erro detalhado ao conectar ao MongoDB:', {
+      message: error.message,
+      stack: error.stack,
+      code: error.code,
+      name: error.name
+    });
     mongoConnection = null;
     throw error;
   }
