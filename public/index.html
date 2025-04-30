@@ -41,6 +41,12 @@
         .btn-config {
             margin-bottom: 20px;
         }
+        .btn-group-config {
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
         #error-box {
             margin: 20px auto;
             max-width: 800px;
@@ -59,6 +65,23 @@
             padding: 15px;
             border-radius: 8px;
             margin-top: 10px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow-wrap: break-word;
+        }
+        .help-section {
+            margin-top: 30px;
+            padding: 15px;
+            border-radius: 8px;
+            background-color: #e7f3ff;
+            border: 1px solid #b8daff;
+        }
+        .help-steps {
+            margin-top: 10px;
+            padding-left: 20px;
+        }
+        .help-steps li {
+            margin-bottom: 10px;
         }
     </style>
 </head>
@@ -69,7 +92,11 @@
 
             <div id="config-panel" class="text-center">
                 <div id="status-message" class="status-box" style="display: none;"></div>
-                <button id="config-btn" class="btn btn-primary btn-config" onclick="verificarConexao()">Verificar Conexão com Banco de Dados</button>
+                <div class="btn-group-config">
+                    <button id="config-btn" class="btn btn-primary" onclick="verificarConexao()">Verificar Conexão com Banco de Dados</button>
+                    <button class="btn btn-secondary" onclick="executarDiagnostico()">Diagnóstico Avançado</button>
+                    <button class="btn btn-info" onclick="tentarCorrigir()">Tentar Corrigir Conexão</button>
+                </div>
             </div>
 
             <div id="loading" class="text-center">
@@ -110,6 +137,30 @@
             
             <div id="no-data" class="alert alert-info mt-3" style="display: none;">
                 Nenhum lead encontrado.
+            </div>
+
+            <div id="help-section" class="help-section" style="display: none;">
+                <h5>Como resolver problemas de conexão:</h5>
+                <ol class="help-steps">
+                    <li>
+                        <strong>Verificar a variável de ambiente MONGODB_URI no Vercel</strong><br>
+                        Acesse o painel do Vercel, vá em Settings > Environment Variables e verifique se MONGODB_URI está configurada corretamente.
+                    </li>
+                    <li>
+                        <strong>Formato correto da string de conexão</strong><br>
+                        Para MongoDB Atlas: <code>mongodb+srv://usuário:senha@cluster0.mongodb.net/NomeDoBanco?retryWrites=true&w=majority</code><br>
+                        Para MongoDB standalone: <code>mongodb://usuário:senha@endereco:27017/NomeDoBanco</code>
+                    </li>
+                    <li>
+                        <strong>Liberar acesso no MongoDB Atlas</strong><br>
+                        No MongoDB Atlas, vá em Network Access e adicione <code>0.0.0.0/0</code> para permitir acesso de qualquer IP.
+                    </li>
+                    <li>
+                        <strong>Verificar usuário e senha</strong><br>
+                        Confira se as credenciais estão corretas e se o usuário tem permissão para acessar o banco.
+                    </li>
+                </ol>
+                <div id="diagnostic-results" class="debug-info" style="display: none;"></div>
             </div>
         </div>
     </div>
@@ -154,17 +205,118 @@
                     statusMsg.style.borderColor = '#c3e6cb';
                     statusMsg.style.color = '#155724';
                     statusMsg.textContent = `✅ Conexão estabelecida com sucesso! Banco: ${data.database}`;
+                    
+                    // Atualizar dados se a conexão for bem-sucedida
+                    carregarDados();
                 } else {
                     statusMsg.style.backgroundColor = '#f8d7da';
                     statusMsg.style.borderColor = '#f5c6cb';
                     statusMsg.style.color = '#721c24';
-                    statusMsg.textContent = `❌ Falha na conexão: ${data.error || 'Erro desconhecido'}`;
+                    statusMsg.innerHTML = `❌ Falha na conexão: ${data.message || 'Erro desconhecido'}<br>
+                        <small>${data.suggestion || ''}</small>`;
+                    
+                    // Mostrar seção de ajuda
+                    document.getElementById('help-section').style.display = 'block';
                 }
             } catch (err) {
                 statusMsg.style.backgroundColor = '#f8d7da';
                 statusMsg.style.borderColor = '#f5c6cb';
                 statusMsg.style.color = '#721c24';
                 statusMsg.textContent = `❌ Erro ao verificar conexão: ${err.message}`;
+                
+                // Mostrar seção de ajuda
+                document.getElementById('help-section').style.display = 'block';
+            }
+        }
+
+        async function executarDiagnostico() {
+            const diagnosticResults = document.getElementById('diagnostic-results');
+            const helpSection = document.getElementById('help-section');
+            
+            helpSection.style.display = 'block';
+            diagnosticResults.style.display = 'block';
+            diagnosticResults.innerHTML = 'Executando diagnóstico...<br><div class="spinner-border spinner-border-sm text-primary mt-2" role="status"></div>';
+            
+            try {
+                const response = await fetch('/api/diagnose');
+                const data = await response.json();
+                
+                diagnosticResults.innerHTML = '<strong>Resultados do diagnóstico:</strong><br>' + 
+                    JSON.stringify(data, null, 2);
+            } catch (err) {
+                diagnosticResults.innerHTML = `Erro ao executar diagnóstico: ${err.message}`;
+            }
+        }
+
+        async function tentarCorrigir() {
+            const statusMsg = document.getElementById('status-message');
+            statusMsg.style.display = 'block';
+            statusMsg.textContent = 'Analisando e tentando corrigir a conexão...';
+            
+            const diagnosticResults = document.getElementById('diagnostic-results');
+            const helpSection = document.getElementById('help-section');
+            
+            helpSection.style.display = 'block';
+            diagnosticResults.style.display = 'block';
+            
+            try {
+                const response = await fetch('/api/fix-connection');
+                const data = await response.json();
+                
+                // Formatar o resultado
+                let resultHtml = '<strong>Diagnóstico da conexão:</strong><br>';
+                
+                if (data.diagnostic) {
+                    if (!data.diagnostic.uri_exists) {
+                        resultHtml += '⚠️ A variável MONGODB_URI não está configurada.<br>';
+                    } else if (!data.diagnostic.is_valid_format) {
+                        resultHtml += '⚠️ O formato da string de conexão é inválido.<br>';
+                    } else if (data.diagnostic.connection_test && data.diagnostic.connection_test.includes('Falha')) {
+                        resultHtml += `⚠️ ${data.diagnostic.connection_test}<br>`;
+                    } else if (data.diagnostic.connection_test) {
+                        resultHtml += `✅ ${data.diagnostic.connection_test}<br>`;
+                    }
+                }
+                
+                if (data.fix_attempt && data.fix_attempt.tried) {
+                    resultHtml += `<br><strong>Problema identificado:</strong> ${data.fix_attempt.issue}<br>`;
+                    resultHtml += `<strong>Ação recomendada:</strong> ${data.fix_attempt.action}<br>`;
+                    
+                    if (data.fix_attempt.suggested_fix) {
+                        resultHtml += `<strong>Sugestão de correção:</strong> ${data.fix_attempt.suggested_fix}<br>`;
+                    }
+                }
+                
+                resultHtml += '<br><strong>Exemplos de strings de conexão válidas:</strong><br>';
+                resultHtml += `MongoDB Atlas: <code>${data.valid_examples.atlas}</code><br>`;
+                resultHtml += `MongoDB Standalone: <code>${data.valid_examples.standalone}</code><br>`;
+                
+                resultHtml += '<br><strong>Instruções:</strong><br>';
+                resultHtml += `• ${data.instructions.vercel}<br>`;
+                resultHtml += `• ${data.instructions.atlas}<br>`;
+                resultHtml += `• ${data.instructions.credentials}<br>`;
+                
+                // Mostrar resultados
+                diagnosticResults.innerHTML = resultHtml;
+                
+                // Atualizar status
+                if (data.diagnostic && data.diagnostic.connection_test && data.diagnostic.connection_test.includes('sucedida')) {
+                    statusMsg.style.backgroundColor = '#d4edda';
+                    statusMsg.style.borderColor = '#c3e6cb';
+                    statusMsg.style.color = '#155724';
+                    statusMsg.textContent = '✅ A conexão parece estar correta. Tente carregar os dados novamente.';
+                } else {
+                    statusMsg.style.backgroundColor = '#f8d7da';
+                    statusMsg.style.borderColor = '#f5c6cb';
+                    statusMsg.style.color = '#721c24';
+                    statusMsg.textContent = '⚠️ Foram encontrados problemas na conexão. Veja os detalhes abaixo.';
+                }
+            } catch (err) {
+                diagnosticResults.innerHTML = `Erro ao tentar corrigir a conexão: ${err.message}`;
+                statusMsg.style.backgroundColor = '#f8d7da';
+                statusMsg.style.borderColor = '#f5c6cb';
+                statusMsg.style.color = '#721c24';
+                statusMsg.textContent = `❌ Erro ao tentar corrigir: ${err.message}`;
             }
         }
 
@@ -175,33 +327,27 @@
             const noData = document.getElementById('no-data');
             const tableBody = document.getElementById('table-body');
             const debugInfo = document.getElementById('debug-info');
+            const helpSection = document.getElementById('help-section');
 
             loading.style.display = 'block';
             errorMessage.style.display = 'none';
             dataContainer.style.display = 'none';
             noData.style.display = 'none';
+            helpSection.style.display = 'none';
 
-            try {
-                // Primeira verificação da conexão
-                const testResponse = await fetch('/api/test-db');
-                const testData = await testResponse.json();
-                
-                if (testData.status !== 'success') {
-                    throw new Error(`Falha na conexão com MongoDB: ${testData.error || 'Erro desconhecido'}`);
-                }
-                
-                // Se a conexão estiver ok, busca os dados
+            try {                
+                // Buscar os dados
                 const response = await fetch('/api/dados');
                 
                 if (!response.ok) {
-                    const errorText = await response.text();
+                    let errorText = await response.text();
                     let errorObj;
                     try {
                         errorObj = JSON.parse(errorText);
                     } catch (e) {
                         errorObj = { error: errorText };
                     }
-                    throw new Error(errorObj.error || `Erro ${response.status}: ${errorText}`);
+                    throw new Error(errorObj.error || errorObj.message || `Erro ${response.status}: ${errorText}`);
                 }
                 
                 const data = await response.json();
@@ -249,6 +395,7 @@
                 
                 loading.style.display = 'none';
                 errorMessage.style.display = 'block';
+                helpSection.style.display = 'block';
             }
         }
 
